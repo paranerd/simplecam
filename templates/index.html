@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="main">
+	<h2>SimpleCam</h2>
+	<a href="{{ url_for('sounds') }}">Sounds</a>
+	<br>
+	<a href="{{ url_for('videostream') }}">Videostream</a>
+	<br>
+	<a href="{{ url_for('audiostream') }}">Audiostream</a>
+</div>
+{% endblock %}

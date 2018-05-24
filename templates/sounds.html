@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="sounds">
+	<h2>Sounds</h2>
+	<ul>
+		{% for file in files %}
+			<li><a href="/static/sounds/{{ file }}">{{ file }}</a></li>
+		{% endfor %}
+	</ul>
+</div>
+{% endblock %}

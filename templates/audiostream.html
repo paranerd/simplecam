@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="audiostream">
+	<h2>Audio Stream</h2>
+
+	<audio controls>
+		<source src="{{ url_for('audiofeed') }}" type="audio/x-wav;codec=pcm">
+		Your browser does not support the audio element.
+	</audio>
+</div>
+{% endblock %}
