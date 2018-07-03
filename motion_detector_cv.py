@@ -74,7 +74,7 @@ class MotionDetector():
 		self.writer = cv.CreateVideoWriter(datetime.now().strftime("%b-%d_%H:%M:%S")+".avi", self.codec, 15, cv.GetSize(self.frame), 1)
 
 	def run(self):
-		print "Started"
+		print("Started")
 		started = time.time()
 		while True:
 			curframe = cv.QueryFrame(self.capture)
@@ -95,7 +95,7 @@ class MotionDetector():
 
 					# Wait 5 second for luminosity adjusting etc.
 					if instant > started +5:
-						print "* Something is moving (" + self.getTimestamp() + ")"
+						print("* Something is moving (" + str(self.getTimestamp()) + ")")
 						# Set isRecording = True only if we record a video
 						if self.doRecord:
 							self.initRecorder()

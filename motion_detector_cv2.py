@@ -44,7 +44,7 @@ class MotionDetector():
 		self.writer.release()
 
 	def findFPS(self, source, num_frames=120):
-		print "* Determining FPS..."
+		print("* Determining FPS...")
 
 		# Start time
 		start = time.time()
@@ -61,7 +61,7 @@ class MotionDetector():
 
 		# Calculate frames per second
 		fps = int(math.floor(num_frames / seconds))
-		print "* Setting FPS to ", fps
+		print("* Setting FPS to " + str(fps))
 		return fps
 
 	def initRecorder(self):
@@ -73,7 +73,7 @@ class MotionDetector():
 
 	def warmup(self):
 		# Wait for luminosity adjustments, etc.
-		print "* Warming up..."
+		print("* Warming up...")
 		remaining = (time.time() - self.initialized - self.warmupTime)
 		if (remaining < 0):
 			time.sleep(abs(remaining))
@@ -82,7 +82,7 @@ class MotionDetector():
 		self.warmup()
 		slid_win = deque(maxlen=self.fps * self.stillLimit)
 		framesWritten = 0
-		print "* Started"
+		print("* Started")
 
 		while True:
 			# Capture frame
@@ -104,13 +104,13 @@ class MotionDetector():
 
 			if not self.isRecording:
 				if movement > self.threshold:
-					print "* Movement detected - ", time.time()
+					print("* Movement detected - " + str(time.time()))
 
 					if self.track:
 						self.trackMotion(frame, diff)
 
 					if self.doRecord:
-						print "* Start recording - ", time.time()
+						print("* Start recording - " + str(time.time()))
 						self.initRecorder()
 						self.isRecording = True
 			else:
@@ -119,14 +119,14 @@ class MotionDetector():
 				# {self.stillLimit} seconds
 				if (sum([x > self.threshold for x in slid_win]) == 0 and
 					framesWritten >= self.recordDuration * self.fps):
-					print "* Stop recording - ", time.time()
+					print("* Stop recording - " + str(time.time()))
 
 					# Reset all
 					self.isRecording = False
 					framesWritten = 0
 					slid_win = deque(maxlen=self.fps * self.stillLimit)
 				else:
-					print "* Write: ", datetime.now().strftime("%b-%d_%H:%M:%S")
+					print("* Write: " str(datetime.now().strftime("%b-%d_%H:%M:%S")))
 					self.writer.write(frame)
 					framesWritten += 1
 
