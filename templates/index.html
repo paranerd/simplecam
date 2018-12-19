@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div id="main">
+<div class="container">
 	<h2>SimpleCam</h2>
-	<a href="{{ url_for('sounds') }}">Sounds</a>
-	<br>
-	<a href="{{ url_for('videostream') }}">Videostream</a>
-	<br>
-	<a href="{{ url_for('audiostream') }}">Audiostream</a>
+	<div class="row">
+		<div class="col-md-12 text-center">
+			<a class="btn btn-danger" style="width: 200px;" href="{{ url_for('live') }}"><i class="fas fa-wifi fa-fw"></i>Live</a>
+			<a class="btn btn-warning" style="width: 200px;" href="{{ url_for('archive') }}"><i class="fas fa-archive fa-fw"></i>Archive</a>
+		</div>
+	</div>
 </div>
 {% endblock %}

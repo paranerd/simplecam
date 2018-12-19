@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="main">
+	<div class="container">
+		<h2>Archive</h2>
+	</div>
+	<div class="container">
+		<div class="row">
+			<table class="table table-striped">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Type</th>
+						<th>Size</th>
+						<th class="text-right">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for record in getRecords() %}
+					<tr>
+						<td>{{ record.filename }}</td>
+						<td>{{ record.type }}</td>
+						<td>{{ record.size }}</td>
+						<td class="text-right">
+							<a href="archive/{{ record.filename }}" class="btn btn-success"><i class="fas fa-play fa-fw"></i>Play</a>
+							<a href="archive/delete/{{ record.filename }}" class="btn btn-danger"><i class="fas fa-trash fa-fw"></i>Delete</a>
+						</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</div>
+{% endblock %}

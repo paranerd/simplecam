@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="live" class="container">
+	<div class="row">
+		<h2>Live</h2>
+	</div>
+	<div class="row">
+		<!-- <img class="video" src="{{ url_for('videostream') }}"> -->
+	</div>
+
+	<div class="row">
+		<audio controls autoplay>
+			<source src="{{ url_for('audiostream') }}" type="audio/x-wav;codec=pcm">
+			<!--<source src="localhost:4444" type="audio/x-wav;codec=pcm">-->
+			<!-- <source src="tmp.wav" type="audio/x-wav;codec=pcm"> -->
+			Your browser does not support the audio element.
+		</audio>
+	</div>
+</div>
+{% endblock %}
