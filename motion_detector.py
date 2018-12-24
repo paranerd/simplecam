@@ -9,6 +9,7 @@ import threading
 import subprocess
 from collections import deque
 from datetime import datetime
+from lock_manager import LockManager
 
 from util import Util
 
@@ -16,7 +17,7 @@ class MotionDetector(threading.Thread):
 	def __init__(self, source=None, doRecord=True, doDisplay=True, doAddContours=True, doAddTarget=False):
 		threading.Thread.__init__(self)
 
-		self.name = "MotionDetector"
+		self.name = self.__class__.__name__
 		self.archive = "archive"
 
 		self.writer = None
@@ -27,7 +28,7 @@ class MotionDetector(threading.Thread):
 		#self.codec = 0x7634706d #cv2.VideoWriter_fourcc('M','P', '4', 'V')
 		#self.codec = cv2.VideoWriter_fourcc('X','2', '6', '4')
 		#self.codec = 0x31637661
-		self.stillLimit = 5
+		self.OBSERVER_LENGTH = 5 # Time in seconds to be observed for noise
 		self.threshold = 15
 
 		self.doDisplay = doDisplay
@@ -41,8 +42,7 @@ class MotionDetector(threading.Thread):
 		self.fps = 22 #self.findFPS(self.source)
 		self.height, self.width = self.setDimensions(self.source)
 
-		self.noiseDetector = None
-		self.detected = False
+		self.lockManager = LockManager("motion")
 
 	def __del__(self):
 		# Release camera
@@ -50,6 +50,9 @@ class MotionDetector(threading.Thread):
 
 		# Close all windows
 		cv2.destroyAllWindows()
+
+		# Remove lock if exists
+		self.lockManager.remove()
 
 	def getFrame(self):
 		if self.currentFrame is not None:
@@ -92,40 +95,46 @@ class MotionDetector(threading.Thread):
 
 		return camera
 
-	def startRecorder(self):
+	def startRecording(self):
 		'''
-		Create the recorder
+		Setup the recorder
 		'''
-		# Set filename
-		self.currentFile = self.archive + "/" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".avi"
-		# Set path and FPS
-		self.writer = cv2.VideoWriter(self.currentFile, self.codec, self.fps, (self.width, self.height))
-		#self.writer = cv2.VideoWriter("archive/" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".mp4", self.codec, self.fps, (320,240))
 
-	def stopRecorder(self):
+		Util.log(self.name, "Motion detected! Recording...")
+
+		# Determine filename
+		otherDetected = self.lockManager.readOther()
+
+		# Another detector has been triggered first, use that filename
+		if otherDetected:
+			self.currentFile = self.archive + "/" + otherDetected
+		# Motion detected first, we set the filename
+		else:
+			self.currentFile = self.archive + "/" + datetime.now().strftime("%Y%m%d_%H%M%S")
+
+			# Set lock
+			self.lockManager.set(os.path.basename(self.currentFile).split('.')[0])
+
+		# Set path and FPS
+		self.writer = cv2.VideoWriter(self.currentFile + ".avi", self.codec, self.fps, (self.width, self.height))
+
+	def stopRecording(self):
 		self.writer = None
 		self.currentFile = None
+		#self.lockManager.remove()
 
-	def convertToMp4(self, removeSource=True):
-		# Build destination path
-		filename, extension = os.path.splitext(self.currentFile)
-		destination = filename + ".mp4"
-
+	def convertToMp4(self):
 		try:
 			Util.log(self.name, "Converting video...")
-			cmd = 'ffmpeg -i ' + self.currentFile + ' ' + destination + ' 2> /dev/null'
+			cmd = 'for i in ' + self.archive + '/*.avi; do ffmpeg -i "$i" "${i%.*}.mp4" 2> /dev/null && rm "$i"; done'
 			p = subprocess.Popen(cmd, shell=True)
 			(output, err) = p.communicate()
-			Util.log(self.name, "Done.")
 
-			if removeSource and os.path.isfile(destination):
-				os.remove(self.currentFile)
 		except subprocess.CalledProcessError:
-			Util.log(self.name, "Error converting")
+			Util.log(self.name, "Error converting video")
 
 	def run(self):
-		slidWin = deque(maxlen=self.fps * self.stillLimit)
-		framesWritten = 0
+		observer = deque(maxlen=self.fps * self.OBSERVER_LENGTH)
 
 		while True:
 			# Grab a frame
@@ -162,8 +171,8 @@ class MotionDetector(threading.Thread):
 			res = frameDilated.astype(np.uint8)
 			movement = (np.count_nonzero(res) * 100) / res.size
 
-			# Add movement percentage to sliding window
-			slidWin.append(movement)
+			# Add movement percentage to observer
+			observer.append(movement)
 
 			if self.doAddContours or self.doAddTarget:
 				frameToSave, targets = self.addContours(self.currentFrame, frameDilated)
@@ -171,59 +180,52 @@ class MotionDetector(threading.Thread):
 				if self.doAddTarget:
 					frameToSave = self.addTarget(self.currentFrame, targets)
 
-			self.detected = sum([x > self.threshold for x in slidWin]) > 0 # and movement > self.threshold
-
-			if self.detected is True or (self.noiseDetector is not None and self.noiseDetector.hasDetected()): # os.path.isfile('noise.lock'):
-				if self.writer is None:
-					Util.log(self.name, "Motion detected! Recording...")
-					self.startRecorder()
+			if self.detected(sum([x > self.threshold for x in observer]) > 0):
+				if not self.recording():
+					self.startRecording()
 
 				self.writer.write(frameToSave)
-			elif self.writer is not None:
-				Util.log(self.name, "Saving video...")
-
+			elif self.recording():
 				# Convert
 				self.convertToMp4()
 
 				# Reset all
-				self.stopRecorder()
+				self.stopRecording()
 
 				Util.log(self.name, "Observing...")
 
-			# Update master
+			# Update master frame
 			self.master = frame2
 
 			# Display
 			if self.doDisplay:
 				cv2.imshow("Current frame:", self.currentFrame)
 
-			# key delay and action
+			# Exit on 'q'
 			key = cv2.waitKey(1) & 0xFF
 
 			if key == ord('q'):
 				break
-			elif key != 255:
-				Util.log('key:',[chr(key)])
 
 	def addContours(self, frameRaw, frameDilated):
 		# Find contours on thresholded image
 		nada, contours, nada = cv2.findContours(frameDilated.copy(),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 
-		# make coutour frame
+		# Make coutour frame
 		frameContour = frameRaw.copy()
 
-		# target contours
+		# Target contours
 		targets = []
 
-		# loop over the contour
+		# Loop over the contour
 		for c in contours:
-			# if the contour is too small, ignore it
+			# If the contour is too small, ignore it
 			if cv2.contourArea(c) < 500:
-				# make sure this has a less than sign, not an html escape
+				# Make sure this has a less than sign, not an html escape
 				continue
 
-			# contour data
-			M = cv2.moments(c)#;Util.log( M )
+			# Contour data
+			M = cv2.moments(c)
 			cx = int(M['m10']/M['m00'])
 			cy = int(M['m01']/M['m00'])
 			x, y, w, h = cv2.boundingRect(c)
@@ -243,7 +245,7 @@ class MotionDetector(threading.Thread):
 		return frameContour, targets
 
 	def addTarget(self, frameRaw, targets):
-		# make target
+		# Make target
 		area = sum([x[2] for x in targets])
 		mx = 0
 		my = 0
@@ -255,7 +257,7 @@ class MotionDetector(threading.Thread):
 			mx = int(round(mx / len(targets), 0))
 			my = int(round(my / len(targets), 0))
 
-		# plot target
+		# Plot target
 		tr = 50
 		frameTarget = frameRaw.copy()
 
@@ -266,28 +268,37 @@ class MotionDetector(threading.Thread):
 
 		return frameTarget
 
-	def sync(self, nd):
-		self.noiseDetector = nd
+	def detected(self, motion):
+		otherDetected = self.lockManager.readOther()
 
-	def hasDetected(self):
-		return self.detected
+		# There's no motion, release lock
+		if not motion:
+			self.lockManager.remove()
+
+		return otherDetected or motion
+
+	def recording(self):
+		return self.writer is not None
 
 if __name__ == "__main__":
 	args = sys.argv[1:]
 	source = None
+	doDisplay = False
 
 	try:
-		opts, args = getopt.getopt(args, "hs:",["source="])
+		opts, args = getopt.getopt(args, "hs:d",["source=", "display"])
 	except getopt.GetoptError:
-		print('python3 motion_detector.py -s <source>')
+		print('python3 motion_detector.py -s <source> [-d]')
 		sys.exit(2)
 
 	for opt, arg in opts:
 		if opt == '-h':
-			print('python3 motion_detector.py -s <source>')
+			print('python3 motion_detector.py -s <source> [-d]')
 			sys.exit()
 		elif opt in ("-s", "--source"):
 			source = arg.strip()
+		elif opt in ("-d", "--display"):
+			doDisplay = True
 
 	if source is not None:
 		print('Input: ', source)
@@ -297,5 +308,5 @@ if __name__ == "__main__":
 	if source is not None and not os.path.isfile(source):
 		print(str(source) + " does not exist")
 	else:
-		md = MotionDetector(source=source)
+		md = MotionDetector(source=source, doDisplay=doDisplay)
 		md.start()

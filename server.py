@@ -15,11 +15,8 @@ archive_path = 'archive'
 nd = NoiseDetector(useRMS=True)
 nd.start()
 
-#md = MotionDetector(doDisplay=False)
-#md.start()
-
-#md.sync(nd)
-#nd.sync(md)
+md = MotionDetector(doDisplay=False)
+md.start()
 
 @app.route('/')
 def index():

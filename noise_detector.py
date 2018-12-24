@@ -1,3 +1,4 @@
+self.CHUNKS_PER_SEC# https://raw.githubusercontent.com/jeysonmc/python-google-speech-scripts/master/stt_google.py
 # sudo apt install lame python3-pip
 # pip3 install pyaudio
 
@@ -10,42 +11,44 @@ import time
 import math
 import struct
 import threading
-
 import io
 
 from collections import deque
 from datetime import datetime
 
+from lock_manager import LockManager
+
 from util import Util
 
 class NoiseDetector(threading.Thread):
-	# https://raw.githubusercontent.com/jeysonmc/python-google-speech-scripts/master/stt_google.py
 	def __init__(self, threshold=None, useRMS=True):
 		threading.Thread.__init__(self)
 
-		self.name				= "NoiseDetector"
+		self.name				= self.__class__.__name__
 
 		self.FORMAT             = pyaudio.paInt16
-		self.CHUNK_SIZE			= 1024  # How many bytes to read from mic each time (stream.read())
-		self.CHANNELS           = 1
 		self.RATE               = 16000 # Hz, so samples (bytes) per second
+		self.CHUNK_SIZE			= 1024  # How many bytes to read from mic each time (stream.read())
+		self.CHUNKS_PER_SEC		= math.floor(self.RATE / self.CHUNK_SIZE) # How many chunks make a second? (16.000 bytes/s, each chunk is 1.024 bytes, so 1s is 15 chunks)
+		self.CHANNELS           = 1
+		self.HISTORY_LENGTH		= 2     # Seconds of audio cache for prepending to records to prevent chopped phrases (history length + observer length = min record length)
 		self.OBSERVER_LENGTH	= 3	    # Time in seconds to be observed for noise
 		self.NOTIFICATION_LIMIT = 1     # Seconds before a notification is sent
-		self.HISTORY_LENGTH		= 2     # Seconds of audio cache for prepending to records to prevent chopped phrases (history length + observer length = min record length)
 
 		self.useRMS				= useRMS
-		self.archive			= "archive/"
+		self.archive			= "archive"
 		self.currentFile		= None
 		self.chunk				= None
 		self.chunks				= []
+		self.record				= [] # Stores audio to be saved
+		self.notified			= False # If we already notified the client(s)
 
 		self.audio              = pyaudio.PyAudio()
 		self.stream				= self.getStream()
 
 		self.threshold			= self.determineThreshold(useRMS, threshold)
 
-		self.motionDetector		= None
-		self.detected			= False
+		self.lockManager		= LockManager("noise")
 
 	def __del__(self):
 		self.stream.close()
@@ -127,48 +130,50 @@ class NoiseDetector(threading.Thread):
 
 		return math.sqrt(sum_squares / count)
 
+	def startRecording(self):
+		Util.log(self.name, "Noise detected! Recording...")
+
+		# Determine filename
+		otherDetected = self.lockManager.readOther()
+
+		# Another detector has been triggered first, use that filename
+		if otherDetected:
+			self.currentFile = self.archive + "/" + otherDetected
+		# Noise detected first, we set the filename
+		else:
+			self.currentFile = self.archive + "/" + datetime.now().strftime("%Y%m%d_%H%M%S")
+
+			# Set lock
+			self.lockManager.set(os.path.basename(self.currentFile).split('.')[0])
+
+	def stopRecording(self):
+		# Reset all
+		self.currentFile = None
+		self.notified = False
+		self.record = []
+
 	def run(self):
 		"""
 		Listens to Microphone, detects noises and records them
 		Noise is defined as sound surrounded by silence (according to threshold)
 		"""
 
-		# Stores audio to be saved
-		record = []
-
-		# If we are currently recording
-		recording = False
-
-		# If we already notified the client(s)
-		notified = False
-
-		# How many chunks make a second?
-		# (16.000 bytes/s, each chunk is 1.024 bytes, so 1s is 15 chunks)
-		chunksPerSec = math.floor(self.RATE / self.CHUNK_SIZE)
-
 		# Stores audio intensity of previous sound-chunks
 		# If one of these chunks is above threshold, recording gets triggered
 		# Keep the last {OBSERVER_LENGTH} seconds in observer
-		observer = deque(maxlen=self.OBSERVER_LENGTH * chunksPerSec)
+		observer = deque(maxlen=self.OBSERVER_LENGTH * self.CHUNKS_PER_SEC)
 
 		# Prepend audio from before noise was detected
 		# Keep the last {HISTORY_LENGTH} seconds in history
-		history = deque(maxlen=self.HISTORY_LENGTH * chunksPerSec)
+		history = deque(maxlen=self.HISTORY_LENGTH * self.CHUNKS_PER_SEC)
 
 		Util.log(self.name, "Listening...")
-
-		forlive = []
 
 		try:
 			while True:
 				# Current chunk of audio data
 				self.chunk = self.stream.read(self.CHUNK_SIZE)
 				history.append(self.chunk)
-				forlive.append(self.chunk)
-
-				if len(forlive) > 10 * chunksPerSec:
-					self.getSound3(forlive)
-					forlive = []
 
 				# Add the average audio intensity of this chunk to the sliding-window
 				if self.useRMS:
@@ -176,28 +181,19 @@ class NoiseDetector(threading.Thread):
 				else:
 					observer.append(math.sqrt(abs(audioop.avg(self.chunk, 4))))
 
-				self.detected = sum([x > self.threshold for x in observer]) > 0
-
-				if self.detected is True or (self.motionDetector is not None and self.motionDetector.hasDetected()): # os.path.isfile('motion.lock'):
+				if self.detected(sum([x > self.threshold for x in observer]) > 0):
 					# There's at least one chunk in the sliding-window above threshold
-					if not recording:
-						recording = True
-						self.currentFile = self.archive + "/" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".wav"
-						Util.log(self.name, "Noise detected! Recording...")
+					if not self.recording():
+						self.startRecording()
 
-					record.append(self.chunk)
+					self.record.append(self.chunk)
 
-					if not notified and len(record) > self.NOTIFICATION_LIMIT * chunksPerSec:
-						Util.log(self.name, "Notifying")
-						notified = True
-				elif recording is True:
+					if not self.notified and len(self.record) > self.NOTIFICATION_LIMIT * self.CHUNKS_PER_SEC:
+						self.notify()
+				elif self.recording():
 					# Silence limit was reached, finish recording and save
-					self.save(list(history) + record)
-
-					# Reset all
-					recording = False
-					notified = False
-					record = []
+					self.save(list(history) + self.record)
+					self.stopRecording()
 
 					Util.log(self.name, "Listening...")
 		except KeyboardInterrupt:
@@ -205,8 +201,8 @@ class NoiseDetector(threading.Thread):
 
 	def genHeader(self, sampleRate, bitsPerSample, channels, samples):
 		#datasize = 2000*10**6
-		datasize = len(samples) * channels * bitsPerSample // 8
 		#datasize = 1 * channels * bitsPerSample // 8
+		datasize = len(samples) * channels * bitsPerSample // 8
 		o = bytes("RIFF","ascii")                                               # (4byte) Marks file as RIFF
 		o += (datasize + 36).to_bytes(4,'little')                               # (4byte) File size in bytes excluding this and RIFF marker
 		o += bytes("WAVE",'ascii')                                              # (4byte) File type
@@ -226,18 +222,17 @@ class NoiseDetector(threading.Thread):
 		data = [self.chunk]
 		data = b''.join(data)
 
-		# generate the WAV file contents
+		# Generate the WAV file contents
 		with io.BytesIO() as wav_file:
 			wav_writer = wave.open(wav_file, "wb")
-			try:  # note that we can't use context manager, since that was only added in Python 3.4
+			try:
 				wav_writer.setframerate(self.RATE)
 				wav_writer.setsampwidth(self.audio.get_sample_size(self.FORMAT))
 				wav_writer.setnchannels(self.CHANNELS)
 				wav_writer.writeframes(data)
 				wav_data = wav_file.getvalue()
-			finally:  # make sure resources are cleaned up
+			finally:
 				wav_writer.close()
-		#print(wav_data)
 		return wav_data
 
 	def getSound(self):
@@ -245,10 +240,8 @@ class NoiseDetector(threading.Thread):
 		data = self.chunk
 
 		self.chunks.append(data)
-		#wave = self.save(list(self.chunks))
 		self.save([self.chunk])
 
-		#wav_header = self.genHeader(16000, 2, 1)
 		wav_header = self.genHeader(self.RATE, self.audio.get_sample_size(self.FORMAT), self.CHANNELS, list(self.chunks))
 
 		return wav_header + data
@@ -268,45 +261,53 @@ class NoiseDetector(threading.Thread):
 
 	def save(self, data):
 		"""
-		Saves mic data to a WAV file.
-		Returns path of saved file
+		Save mic data to a WAV file.
+		Return path of saved file
 		"""
 
-		Util.log(self.name, "Saving...")
+		Util.log(self.name, "Saving audio...")
 
 		# Concat data array to string
 		data = b''.join(data)
 
 		# Write frames to file
-		wf = wave.open(self.currentFile, 'wb')
+		wf = wave.open(self.currentFile + ".wav", 'wb')
 		wf.setnchannels(self.CHANNELS)
 		wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
 		wf.setframerate(self.RATE)
 		wf.writeframes(data)
 		wf.close()
 
-		return self.convertToMp3(self.currentFile, False)
+		# Convert
+		self.convertToMp3()
 
-	def convertToMp3(self, path, removeSource=True):
+	def convertToMp3(self, source=None):
 		try:
-			Util.log(self.name, "Converting audio")
-			cmd = 'lame --preset insane %s' % path + ' 2> /dev/null'
+			Util.log(self.name, "Converting audio...")
+			cmd = 'for i in ' + self.archive + '/*.wav; do lame --preset insane "$i" 2> /dev/null && rm "$i"; done'
 			p = subprocess.Popen(cmd, shell=True)
 			(output, err) = p.communicate()
 
-			if removeSource:
-				os.remove(path)
 		except subprocess.CalledProcessError:
-			Util.log(self.name, "Error converting")
+			Util.log(self.name, "Error converting audio")
 
-		Util.log(self.name, "Saved.")
-		return os.path.splitext(path)[0] + ".mp3"
+		Util.log(self.name, "Converted.")
 
-	def sync(self, md):
-		self.motionDetector = md
+	def detected(self, noise):
+		otherDetected = self.lockManager.readOther()
 
-	def hasDetected(self):
-		return self.detected
+		# There's no noise, release lock
+		if not noise:
+			self.lockManager.remove()
+
+		return otherDetected or noise
+
+	def recording(self):
+		return len(self.record) > 0
+
+	def notify(self):
+		Util.log(self.name, "Notifying")
+		self.notified = True
 
 if __name__ == "__main__":
 	nd = NoiseDetector()
