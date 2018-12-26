@@ -1,6 +1,6 @@
 # https://raw.githubusercontent.com/jeysonmc/python-google-speech-scripts/master/stt_google.py
-# sudo apt install lame python3-pip
-# pip3 install pyaudio
+# WebSocket streaming:
+# https://gist.github.com/fopina/3cefaed1b2d2d79984ad7894aef39a68
 
 import pyaudio
 import wave

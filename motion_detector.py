@@ -1,7 +1,3 @@
-# sudo apt install python3-pip ffmpeg
-# pip3 install opencv-python
-# maybe: sudo apt install python3-opencv
-
 import os, sys, time, math, getopt
 import numpy as np
 import cv2
