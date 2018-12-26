@@ -28,7 +28,7 @@ class MotionDetector(threading.Thread):
 		#self.codec = 0x7634706d #cv2.VideoWriter_fourcc('M','P', '4', 'V')
 		#self.codec = cv2.VideoWriter_fourcc('X','2', '6', '4')
 		#self.codec = 0x31637661
-		self.OBSERVER_LENGTH = 5 # Time in seconds to be observed for noise
+		self.OBSERVER_LENGTH = 5 # Time in seconds to be observed for motion
 		self.threshold = 15
 
 		self.doDisplay = doDisplay
@@ -100,20 +100,9 @@ class MotionDetector(threading.Thread):
 		Setup the recorder
 		'''
 
+		self.currentFile = self.archive + "/" + self.detectedAt
+
 		Util.log(self.name, "Motion detected! Recording...")
-
-		# Determine filename
-		otherDetected = self.lockManager.readOther()
-
-		# Another detector has been triggered first, use that filename
-		if otherDetected:
-			self.currentFile = self.archive + "/" + otherDetected
-		# Motion detected first, we set the filename
-		else:
-			self.currentFile = self.archive + "/" + datetime.now().strftime("%Y%m%d_%H%M%S")
-
-			# Set lock
-			self.lockManager.set(os.path.basename(self.currentFile).split('.')[0])
 
 		# Set path and FPS
 		self.writer = cv2.VideoWriter(self.currentFile + ".avi", self.codec, self.fps, (self.width, self.height))
@@ -271,8 +260,18 @@ class MotionDetector(threading.Thread):
 	def detected(self, motion):
 		otherDetected = self.lockManager.readOther()
 
-		# There's no motion, release lock
-		if not motion:
+		# Set time of detection
+		if otherDetected:
+			self.detectedAt = otherDetected
+		elif motion:
+			self.detectedAt = datetime.now().strftime("%Y%m%d_%H%M%S")
+		else:
+			self.detectedAt = None
+
+		# Manage motion-lock
+		if motion:
+			self.lockManager.set(self.detectedAt)
+		else:
 			self.lockManager.remove()
 
 		return otherDetected or motion

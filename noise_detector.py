@@ -1,4 +1,4 @@
-self.CHUNKS_PER_SEC# https://raw.githubusercontent.com/jeysonmc/python-google-speech-scripts/master/stt_google.py
+# https://raw.githubusercontent.com/jeysonmc/python-google-speech-scripts/master/stt_google.py
 # sudo apt install lame python3-pip
 # pip3 install pyaudio
 
@@ -49,6 +49,7 @@ class NoiseDetector(threading.Thread):
 		self.threshold			= self.determineThreshold(useRMS, threshold)
 
 		self.lockManager		= LockManager("noise")
+		self.detectedAt			= None
 
 	def __del__(self):
 		self.stream.close()
@@ -131,30 +132,24 @@ class NoiseDetector(threading.Thread):
 		return math.sqrt(sum_squares / count)
 
 	def startRecording(self):
+		'''
+		Setup the recorder
+		'''
+
+		self.currentFile = self.archive + "/" + self.detectedAt
+
 		Util.log(self.name, "Noise detected! Recording...")
-
-		# Determine filename
-		otherDetected = self.lockManager.readOther()
-
-		# Another detector has been triggered first, use that filename
-		if otherDetected:
-			self.currentFile = self.archive + "/" + otherDetected
-		# Noise detected first, we set the filename
-		else:
-			self.currentFile = self.archive + "/" + datetime.now().strftime("%Y%m%d_%H%M%S")
-
-			# Set lock
-			self.lockManager.set(os.path.basename(self.currentFile).split('.')[0])
 
 	def stopRecording(self):
 		# Reset all
 		self.currentFile = None
+		self.detectedAt = None
 		self.notified = False
 		self.record = []
 
 	def run(self):
 		"""
-		Listens to Microphone, detects noises and records them
+		Detect noise from microphone and record
 		Noise is defined as sound surrounded by silence (according to threshold)
 		"""
 
@@ -291,13 +286,21 @@ class NoiseDetector(threading.Thread):
 		except subprocess.CalledProcessError:
 			Util.log(self.name, "Error converting audio")
 
-		Util.log(self.name, "Converted.")
-
 	def detected(self, noise):
 		otherDetected = self.lockManager.readOther()
 
-		# There's no noise, release lock
-		if not noise:
+		# Set time of detection
+		if otherDetected:
+			self.detectedAt = otherDetected
+		elif noise:
+			self.detectedAt = datetime.now().strftime("%Y%m%d_%H%M%S")
+		else:
+			self.detectedAt = None
+
+		# Manage noise-lock
+		if noise:
+			self.lockManager.set(self.detectedAt)
+		else:
 			self.lockManager.remove()
 
 		return otherDetected or noise
