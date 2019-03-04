@@ -2,6 +2,7 @@
 
 import os
 import time
+import subprocess
 from multiprocessing import Process
 from flask import Flask, render_template, Response, send_file, stream_with_context, redirect, url_for
 from motion_detector import MotionDetector
@@ -27,12 +28,6 @@ def live():
 
 @app.route('/audiostream')
 def audiostream():
-	def gen():
-		sound = nd.getSound3()
-		while sound:
-			yield sound
-			sound = nd.getSound3()
-
 	def gen2():
 		while True:
 			with open("tmp.wav", "rb") as fwav:
@@ -50,9 +45,17 @@ def audiostream():
 			yield (b'--frame\r\n'
 				b'Content-Type: audio/x-wav;codec=pcm\r\n\r\n' + sound + b'\r\n\r\n')
 
+	def gen4():
+		sound = nd.getSound4()
+		while sound:
+			sound = nd.getSound4()
+			data = subprocess.check_output(['cat', '/home/ijon/Dokumente/simplecam/tmp.wav'])
+			yield data
+
 	#return Response(stream_with_context(gen3()))
 	#return Response(gen2(), mimetype="audio/x-wav;codec=pcm")
-	return send_file('tmp.wav', cache_timeout=-1)
+	#return send_file('tmp.wav', cache_timeout=-1)
+	return Response(gen4(), mimetype='audio/x-wav;codec=pcm')
 
 @app.route('/videostream')
 def videostream():

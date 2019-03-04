@@ -213,6 +213,17 @@ class NoiseDetector(threading.Thread):
 		o += (datasize).to_bytes(4,'little')                                    # (4byte) Data size in bytes
 		return o
 
+	def getSound(self):
+		# Current chunk of audio data
+		data = self.chunk
+
+		self.chunks.append(data)
+		self.save([self.chunk])
+
+		wav_header = self.genHeader(self.RATE, self.audio.get_sample_size(self.FORMAT), self.CHANNELS, list(self.chunks))
+
+		return wav_header + data
+
 	def getSound2(self):
 		data = [self.chunk]
 		data = b''.join(data)
@@ -230,20 +241,8 @@ class NoiseDetector(threading.Thread):
 				wav_writer.close()
 		return wav_data
 
-	def getSound(self):
-		# Current chunk of audio data
-		data = self.chunk
-
-		self.chunks.append(data)
-		self.save([self.chunk])
-
-		wav_header = self.genHeader(self.RATE, self.audio.get_sample_size(self.FORMAT), self.CHANNELS, list(self.chunks))
-
-		return wav_header + data
-
-	def getSound3(self, data):
-		Util.log(self.name, "Saving live chunks")
-		# Concat data array to string
+	def getSound4(self):
+		data = [self.chunk]
 		data = b''.join(data)
 
 		# Write frames to file
@@ -253,6 +252,8 @@ class NoiseDetector(threading.Thread):
 		wf.setframerate(self.RATE)
 		wf.writeframes(data)
 		wf.close()
+
+		return data
 
 	def save(self, data):
 		"""
