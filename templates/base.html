@@ -10,6 +10,15 @@
 
 	<!-- Custom styles -->
 	<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+
+	<!-- Socket.IO -->
+	<script type="text/javascript" src="{{ url_for('static', filename='lib/socket.io/socket.io.min.js') }}"></script>
+
+	<!-- jQuery -->
+	<script type="text/javascript" src="{{ url_for('static', filename='lib/jquery/jquery-3.4.1.min.js') }}"></script>
+
+	<!-- Player -->
+	<script type="text/javascript" src="{{ url_for('static', filename='js/player.js') }}"></script>
 <body>
 	<div id="content">
 		{% block content %}

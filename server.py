@@ -5,10 +5,14 @@ import time
 import subprocess
 from multiprocessing import Process
 from flask import Flask, render_template, Response, send_file, stream_with_context, redirect, url_for
+from flask_socketio import SocketIO, emit
 from motion_detector import MotionDetector
 from noise_detector import NoiseDetector
 
+import threading
+
 app = Flask(__name__)
+socketio = SocketIO(app)
 archive_path = 'archive'
 
 # Setup detectors
@@ -93,6 +97,31 @@ def archive_delete(filename):
 def archive_play(filename):
 	return send_file('archive/' + filename)
 
+@socketio.on('connect')
+def connect():
+	print('Client connected')
+
+@socketio.on('disconnect')
+def disconnect():
+	print('Client disconnected')
+
+class Random_Thread(threading.Thread):
+	def __init__(self):
+		self.delay = 1
+		super(Random_Thread, self).__init__()
+
+	def generate_number(self):
+		while True:
+			sound = nd.getChunk()
+			socketio.emit('sound', {'chunk': sound})
+			time.sleep(0.01)
+
+	def run(self):
+		self.generate_number()
+
+t = Random_Thread()
+t.start()
+
 def getType(filename):
 	name, extension = os.path.splitext(filename)
 	return 'video' if extension == '.mp4' else 'audio'
@@ -115,4 +144,4 @@ def convertByteToMB(byte):
 app.jinja_env.globals.update(getRecords=getRecords)
 
 if __name__ == '__main__':
-	app.run(host='0.0.0.0', debug=True, use_reloader=False)
+	socketio.run(app, host='localhost', port=5000, debug=True, use_reloader=False)

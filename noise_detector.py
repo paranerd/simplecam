@@ -213,6 +213,14 @@ class NoiseDetector(threading.Thread):
 		o += (datasize).to_bytes(4,'little')                                    # (4byte) Data size in bytes
 		return o
 
+	def getChunk(self):
+		# Current chunk of audio data
+		data = self.chunk
+
+		self.chunks.append(data)
+
+		return data
+
 	def getSound(self):
 		# Current chunk of audio data
 		data = self.chunk
