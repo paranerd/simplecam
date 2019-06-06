@@ -194,7 +194,7 @@ class MotionDetector(threading.Thread):
 
 	def addContours(self, frameRaw, frameDilated):
 		# Find contours on thresholded image
-		nada, contours, nada = cv2.findContours(frameDilated.copy(),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+		contours, nada = cv2.findContours(frameDilated.copy(),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 
 		# Make coutour frame
 		frameContour = frameRaw.copy()
