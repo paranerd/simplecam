@@ -12,62 +12,52 @@ import math
 import struct
 import threading
 import io
-
+import numpy as np
 from collections import deque
 from datetime import datetime
 
 from lock_manager import LockManager
-
 from util import Util
 
 class NoiseDetector(threading.Thread):
-	def __init__(self, threshold=None, useRMS=True):
+	def __init__(self):
 		threading.Thread.__init__(self)
 
-		self.name				= self.__class__.__name__
+		self.name               = self.__class__.__name__
 
-		self.FORMAT             = pyaudio.paInt16
-		self.RATE               = 16000 # Hz, so samples (bytes) per second
-		self.CHUNK_SIZE			= 1024  # How many bytes to read from mic each time (stream.read())
+		self.FORMAT             = pyaudio.paFloat32
+		self.RATE               = 48000 # Hz, so samples (bytes) per second
+		self.CHUNK_SIZE			= 2048 # How many bytes to read from mic each time (stream.read())
 		self.CHUNKS_PER_SEC		= math.floor(self.RATE / self.CHUNK_SIZE) # How many chunks make a second? (16.000 bytes/s, each chunk is 1.024 bytes, so 1s is 15 chunks)
 		self.CHANNELS           = 1
-		self.HISTORY_LENGTH		= 2     # Seconds of audio cache for prepending to records to prevent chopped phrases (history length + observer length = min record length)
-		self.OBSERVER_LENGTH	= 3	    # Time in seconds to be observed for noise
-		self.NOTIFICATION_LIMIT = 1     # Seconds before a notification is sent
+		self.HISTORY_LENGTH     = 2 # Seconds of audio cache for prepending to records to prevent chopped phrases (history length + observer length = min record length)
+		self.OBSERVER_LENGTH    = 5	# Time in seconds to be observed for noise
+		self.NOTIFICATION_LIMIT = 1 # Seconds before a notification is sent
 
-		self.useRMS				= useRMS
-		self.archive			= "archive"
-		self.currentFile		= None
-		self.chunk				= None
-		self.chunks				= []
-		self.record				= [] # Stores audio to be saved
-		self.notified			= False # If we already notified the client(s)
+		self.archive            = "/home/paranerd/Dokumente/simplecam/archive"
+		self.current_file       = None
+		self.chunk              = None
+		self.record             = [] # Stores audio chunks
+		self.notified           = False # If we already sent a notification
 
 		self.audio              = pyaudio.PyAudio()
-		self.stream				= self.getStream()
+		self.stream             = self.get_stream()
 
-		self.threshold			= self.determineThreshold(useRMS, threshold)
+		self.threshold          = 1 #self.determine_threshold()
 
-		self.lockManager		= LockManager("noise")
-		self.detectedAt			= None
+		self.lockManager        = LockManager("noise")
+		self.detected_at        = None
 
 	def __del__(self):
 		self.stream.close()
 		self.audio.terminate()
 
-	def determineThreshold(self, useRMS=False, default=None):
+	def get_stream(self):
 		"""
-		Determine threshold noise intensity
-		Anything below the threshold is considered silence
+		Open audio stream
+
+		@return PyAudio
 		"""
-
-		if default is None:
-			return self.determineThresholdRMS() if (useRMS == True) else self.determineThresholdAVG()
-
-		return default
-
-
-	def getStream(self):
 		return self.audio.open(
 			format=self.FORMAT,
 			channels=self.CHANNELS,
@@ -76,74 +66,51 @@ class NoiseDetector(threading.Thread):
 			frames_per_buffer=self.CHUNK_SIZE
 		)
 
-	def determineThresholdAVG(self, num_samples=50):
+	def determine_threshold(self):
 		"""
-		Get the average of the 20% largest recorded noise intensities
-		Add 200 for threshold
+		Determine threshold noise intensity using RMS
+		Anything below the threshold is considered silence
+
+		@return float
 		"""
-
-		Util.log(self.name, "Determining threshold using AVG")
-
-		# Get average audio intensities
-		values = [math.sqrt(abs(audioop.avg(self.stream.read(self.CHUNK_SIZE), 4)))
-					for x in range(num_samples)]
-		values = sorted(values, reverse=True)
-		avg = sum(values[:int(num_samples * 0.2)]) / int(num_samples * 0.2)
-
-		threshold = avg + 200
-		Util.log(self.name, "Setting threshold to: " + str(threshold))
-		return threshold
-
-	def determineThresholdRMS(self, num_samples=50):
-		"""
-		Get the average noise level and adds 0.008 for threshold
-		"""
-
-		Util.log(self.name, "Determining threshold using RMS")
+		Util.log(self.name, "Determining threshold...")
 
 		res = []
-		for x in range(num_samples):
+		for x in range(50):
 			block = self.stream.read(self.CHUNK_SIZE)
-			res.append(self.getRMS(block))
+			rms = self.get_rms(block)
+			res.append(rms)
 
-		threshold = (sum(res) / len(res)) + 0.008
+		# Set threshold to 20% above avergae
+		threshold = (sum(res) / len(res)) * 1.2
 		Util.log(self.name, "Setting threshold to: " + str(threshold))
+
 		return threshold
 
-	def getRMS(self, block):
-		# RMS amplitude is defined as the square root of the
-		# mean over time of the square of the amplitude.
-		# so we need to convert this string of bytes into
-		# a string of 16-bit samples...
+	def get_rms(self, block):
+		"""
+		Calculate Root Mean Square (noise level) for audio chunk
 
-		# We will get one short out for each two chars in the string
-		count = len(block) / 2
-		format = "%dh" % (count)
-		shorts = struct.unpack(format, block)
+		@param bytes block
+		@return float
+		"""
+		d = np.frombuffer(block, np.float32).astype(np.float)
+		return np.sqrt((d * d).sum() / len(d))
 
-		# Iterate over the block
-		sum_squares = 0.0
-		for sample in shorts:
-			# Sample is a signed short in +/- 32768.
-			# Normalize it to 1.0
-			n = sample * (1.0/32768.0)
-			sum_squares += n*n
-
-		return math.sqrt(sum_squares / count)
-
-	def startRecording(self):
-		'''
+	def start_recording(self):
+		"""
 		Setup the recorder
-		'''
-
-		self.currentFile = self.archive + "/" + self.detectedAt
+		"""
+		self.current_file = self.archive + "/" + self.detected_at
 
 		Util.log(self.name, "Noise detected! Recording...")
 
-	def stopRecording(self):
-		# Reset all
-		self.currentFile = None
-		self.detectedAt = None
+	def stop_recording(self):
+		"""
+		Reset variables to default
+		"""
+		self.current_file = None
+		self.detected_at = None
 		self.notified = False
 		self.record = []
 
@@ -170,16 +137,14 @@ class NoiseDetector(threading.Thread):
 				self.chunk = self.stream.read(self.CHUNK_SIZE)
 				history.append(self.chunk)
 
-				# Add the average audio intensity of this chunk to the sliding-window
-				if self.useRMS:
-					observer.append(self.getRMS(self.chunk))
-				else:
-					observer.append(math.sqrt(abs(audioop.avg(self.chunk, 4))))
+				# Add noise level of this chunk to the sliding-window
+				rms = self.get_rms(self.chunk)
+				observer.append(rms)
 
 				if self.detected(sum([x > self.threshold for x in observer]) > 0):
 					# There's at least one chunk in the sliding-window above threshold
 					if not self.recording():
-						self.startRecording()
+						self.start_recording()
 
 					self.record.append(self.chunk)
 
@@ -188,107 +153,122 @@ class NoiseDetector(threading.Thread):
 				elif self.recording():
 					# Silence limit was reached, finish recording and save
 					self.save(list(history) + self.record)
-					self.stopRecording()
+					self.stop_recording()
 
 					Util.log(self.name, "Listening...")
 		except KeyboardInterrupt:
 			Util.log(self.name, "Interrupted.")
 
-	def genHeader(self, sampleRate, bitsPerSample, channels, samples):
-		#datasize = 2000*10**6
-		#datasize = 1 * channels * bitsPerSample // 8
-		datasize = len(samples) * channels * bitsPerSample // 8
-		o = bytes("RIFF","ascii")                                               # (4byte) Marks file as RIFF
-		o += (datasize + 36).to_bytes(4,'little')                               # (4byte) File size in bytes excluding this and RIFF marker
-		o += bytes("WAVE",'ascii')                                              # (4byte) File type
-		o += bytes("fmt ",'ascii')                                              # (4byte) Format Chunk Marker
-		o += (16).to_bytes(4,'little')                                          # (4byte) Length of above format data
-		o += (1).to_bytes(2,'little')                                           # (2byte) Format type (1 - PCM)
-		o += (channels).to_bytes(2,'little')                                    # (2byte)
-		o += (sampleRate).to_bytes(4,'little')                                  # (4byte)
-		o += (sampleRate * channels * bitsPerSample // 8).to_bytes(4,'little')  # (4byte)
-		o += (channels * bitsPerSample // 8).to_bytes(2,'little')               # (2byte)
-		o += (bitsPerSample).to_bytes(2,'little')                               # (2byte)
-		o += bytes("data",'ascii')                                              # (4byte) Data Chunk Marker
-		o += (datasize).to_bytes(4,'little')                                    # (4byte) Data size in bytes
-		return o
+	def get_chunk(self):
+		"""
+		Return the current chunk of audio data
 
-	def getChunk(self):
-		# Current chunk of audio data
-		data = self.chunk
-
-		self.chunks.append(data)
-
-		return data
-
-	def getSound(self):
-		# Current chunk of audio data
-		data = self.chunk
-
-		self.chunks.append(data)
-		self.save([self.chunk])
-
-		wav_header = self.genHeader(self.RATE, self.audio.get_sample_size(self.FORMAT), self.CHANNELS, list(self.chunks))
-
-		return wav_header + data
-
-	def getSound2(self):
-		data = [self.chunk]
-		data = b''.join(data)
-
-		# Generate the WAV file contents
-		with io.BytesIO() as wav_file:
-			wav_writer = wave.open(wav_file, "wb")
-			try:
-				wav_writer.setframerate(self.RATE)
-				wav_writer.setsampwidth(self.audio.get_sample_size(self.FORMAT))
-				wav_writer.setnchannels(self.CHANNELS)
-				wav_writer.writeframes(data)
-				wav_data = wav_file.getvalue()
-			finally:
-				wav_writer.close()
-		return wav_data
-
-	def getSound4(self):
-		data = [self.chunk]
-		data = b''.join(data)
-
-		# Write frames to file
-		wf = wave.open('tmp.wav', 'wb')
-		wf.setnchannels(self.CHANNELS)
-		wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
-		wf.setframerate(self.RATE)
-		wf.writeframes(data)
-		wf.close()
-
-		return data
+		@return bytes
+		"""
+		return self.chunk
 
 	def save(self, data):
 		"""
 		Save mic data to a WAV file.
-		Return path of saved file
-		"""
 
+		@param list data
+		"""
 		Util.log(self.name, "Saving audio...")
 
-		# Concat data array to string
+		# Flatten the list
 		data = b''.join(data)
 
-		# Write frames to file
-		wf = wave.open(self.currentFile + ".wav", 'wb')
-		wf.setnchannels(self.CHANNELS)
-		wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
-		wf.setframerate(self.RATE)
-		wf.writeframes(data)
-		wf.close()
+		# Write converted data to file
+		with open(self.current_file + ".wav", "wb+") as file:
+			file.write(self.generate_wav(data))
 
 		# Convert
-		self.convertToMp3()
+		self.convert_to_mp3(self.current_file + ".wav")
 
-	def convertToMp3(self, source=None):
+	def bytes_to_array(self, bytes, type):
+		"""
+		Convert raw audio data to TypedArray
+
+		@param bytes bytes
+		@return numpy-Array
+		"""
+		return np.frombuffer(bytes, dtype=type)
+
+	def generate_wav(self, raw):
+		"""
+		Create WAVE-file from raw audio chunks
+
+		@param bytes raw
+		@return bytes
+		"""
+		# Check if input format is supported
+		if self.FORMAT not in (pyaudio.paFloat32, pyaudio.paInt16):
+			print("Unsupported format")
+			return
+
+		# Convert raw audio bytes to typed array
+		samples = self.bytes_to_array(raw, np.float32)
+
+		# Get sample size
+		sample_size = pyaudio.get_sample_size(self.FORMAT)
+
+		# Get data-length
+		byte_count = (len(samples)) * sample_size
+
+		# Get bits/sample
+		bits_per_sample = sample_size * 8
+
+		# Calculate frame-size
+		frame_size = int(self.CHANNELS * ((bits_per_sample + 7) / 8))
+
+		# Container for WAVE-content
+		wav = bytearray()
+
+		# Start RIFF-Header
+		wav.extend(struct.pack('<cccc', b'R', b'I', b'F', b'F'))
+		# Add chunk size (data-size minus 8)
+		wav.extend(struct.pack('<I', byte_count + 0x2c - 8))
+		# Add RIFF-type ("WAVE")
+		wav.extend(struct.pack('<cccc', b'W', b'A', b'V', b'E'))
+
+		# Start "Format"-part
+		wav.extend(struct.pack('<cccc', b'f', b'm', b't', b' '))
+		# Add header length (16 bytes)
+		wav.extend(struct.pack('<I', 0x10))
+		# Add format-tag (e.g. 1 = PCM, 3 = FLOAT)
+		wav.extend(struct.pack('<H', 3))
+		# Add channel count
+		wav.extend(struct.pack('<H', self.CHANNELS))
+		# Add sample rate
+		wav.extend(struct.pack('<I', self.RATE))
+		# Add bytes/second
+		wav.extend(struct.pack('<I', self.RATE * frame_size))
+		# Add frame size
+		wav.extend(struct.pack('<H', frame_size))
+		# Add bits/sample
+		wav.extend(struct.pack('<H', bits_per_sample))
+
+		# Start data-part
+		wav.extend(struct.pack('<cccc', b'd', b'a', b't', b'a'))
+		# Add data-length
+		wav.extend(struct.pack('<I', byte_count))
+
+		# Add data
+		for sample in samples:
+			wav.extend(struct.pack("<f", sample))
+
+		return bytes(wav)
+
+	def convert_to_mp3(self, path):
+		"""
+		Convert wav-file to mp3
+
+		@param string path
+		"""
+		Util.log(self.name, "Converting audio...")
+
 		try:
-			Util.log(self.name, "Converting audio...")
-			cmd = 'for i in ' + self.archive + '/*.wav; do lame --preset insane "$i" 2> /dev/null && rm "$i"; done'
+			cmd = 'lame --preset insane "{}" 2> /dev/null && rm "{}"'.format(path, path)
 			p = subprocess.Popen(cmd, shell=True)
 			(output, err) = p.communicate()
 
@@ -296,28 +276,42 @@ class NoiseDetector(threading.Thread):
 			Util.log(self.name, "Error converting audio")
 
 	def detected(self, noise):
-		otherDetected = self.lockManager.readOther()
+		"""
+		Check if this or another detector detected something
+
+		@param boolean noise
+		@return boolean
+		"""
+		other_detected = self.lockManager.readOther()
 
 		# Set time of detection
-		if otherDetected:
-			self.detectedAt = otherDetected
+		if other_detected:
+			self.detected_at = other_detected
 		elif noise:
-			self.detectedAt = datetime.now().strftime("%Y%m%d_%H%M%S")
+			self.detected_at = datetime.now().strftime("%Y%m%d_%H%M%S")
 		else:
-			self.detectedAt = None
+			self.detected_at = None
 
 		# Manage noise-lock
 		if noise:
-			self.lockManager.set(self.detectedAt)
+			self.lockManager.set(self.detected_at)
 		else:
 			self.lockManager.remove()
 
-		return otherDetected or noise
+		return other_detected or noise
 
 	def recording(self):
+		"""
+		Check if currently recording
+
+		@return boolean
+		"""
 		return len(self.record) > 0
 
 	def notify(self):
+		"""
+		Notify
+		"""
 		Util.log(self.name, "Notifying")
 		self.notified = True
 
