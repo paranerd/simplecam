@@ -12,5 +12,7 @@ pip3 install flask pyaudio opencv-python
 ```
 
 ## To-Do
-- Live streaming audio
 - Merging video and audio
+
+## Sources
+https://github.com/log0/video_streaming_with_flask_example
