@@ -1,12 +1,16 @@
-import os, sys, time, math, getopt
+import os
+import sys
+import time
+import math
+import getopt
 import numpy as np
 import cv2
 import threading
 import subprocess
 from collections import deque
 from datetime import datetime
-from lock_manager import LockManager
 
+from lock_manager import LockManager
 from util import Util
 
 class MotionDetector(threading.Thread):
@@ -33,10 +37,10 @@ class MotionDetector(threading.Thread):
 		self.doAddTarget = doAddTarget
 		self.currentFile = None
 
-		self.source = cv2.VideoCapture(source) if source is not None else self.initCamera()
+		self.source = cv2.VideoCapture(source) if source is not None else self.init_camera()
 
-		self.fps = 22 #self.findFPS(self.source)
-		self.height, self.width = self.setDimensions(self.source)
+		self.fps = 22 #self.find_fps(self.source)
+		self.height, self.width = self.set_dimensions(self.source)
 
 		self.lockManager = LockManager("motion")
 
@@ -50,18 +54,18 @@ class MotionDetector(threading.Thread):
 		# Remove lock if exists
 		self.lockManager.remove()
 
-	def getFrame(self):
+	def get_frame(self):
 		if self.currentFrame is not None:
 			ret, jpeg = cv2.imencode('.jpg', self.currentFrame)
 			return jpeg.tobytes()
 
 		return None
 
-	def setDimensions(self, source):
+	def set_dimensions(self, source):
 		frame = cv2.cvtColor(source.read()[1],cv2.COLOR_RGB2GRAY)
 		return frame.shape[0: 2]
 
-	def findFPS(self, source, num_frames=120):
+	def find_fps(self, source, num_frames=120):
 		Util.log(self.name, "Determining FPS...")
 
 		# Start time
@@ -82,7 +86,7 @@ class MotionDetector(threading.Thread):
 		Util.log(self.name, "Setting FPS to " + str(fps))
 		return fps
 
-	def initCamera(self):
+	def init_camera(self):
 		# init camera
 		camera = cv2.VideoCapture(0)
 		camera.set(3,320)
@@ -91,7 +95,7 @@ class MotionDetector(threading.Thread):
 
 		return camera
 
-	def startRecording(self):
+	def start_recording(self):
 		'''
 		Setup the recorder
 		'''
@@ -103,12 +107,12 @@ class MotionDetector(threading.Thread):
 		# Set path and FPS
 		self.writer = cv2.VideoWriter(self.currentFile + ".avi", self.codec, self.fps, (self.width, self.height))
 
-	def stopRecording(self):
+	def stop_recording(self):
 		self.writer = None
 		self.currentFile = None
 		#self.lockManager.remove()
 
-	def convertToMp4(self):
+	def convert_to_mp4(self):
 		try:
 			Util.log(self.name, "Converting video...")
 			cmd = 'for i in ' + self.archive + '/*.avi; do ffmpeg -i "$i" "${i%.*}.mp4" 2> /dev/null && rm "$i"; done'
@@ -160,22 +164,22 @@ class MotionDetector(threading.Thread):
 			observer.append(movement)
 
 			if self.doAddContours or self.doAddTarget:
-				frameToSave, targets = self.addContours(self.currentFrame, frameDilated)
+				frameToSave, targets = self.add_contours(self.currentFrame, frameDilated)
 
 				if self.doAddTarget:
-					frameToSave = self.addTarget(self.currentFrame, targets)
+					frameToSave = self.add_target(self.currentFrame, targets)
 
 			if self.detected(sum([x > self.threshold for x in observer]) > 0):
 				if not self.recording():
-					self.startRecording()
+					self.start_recording()
 
 				self.writer.write(frameToSave)
 			elif self.recording():
 				# Convert
-				self.convertToMp4()
+				self.convert_to_mp4()
 
 				# Reset all
-				self.stopRecording()
+				self.stop_recording()
 
 				Util.log(self.name, "Observing...")
 
@@ -192,7 +196,7 @@ class MotionDetector(threading.Thread):
 			if key == ord('q'):
 				break
 
-	def addContours(self, frameRaw, frameDilated):
+	def add_contours(self, frameRaw, frameDilated):
 		# Find contours on thresholded image
 		contours, nada = cv2.findContours(frameDilated.copy(),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 
