@@ -1,42 +1,18 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div id="live" class="container">
-	<div class="row">
-		<h2>Live</h2>
-	</div>
-	<div class="row">
+<div class="container">
+	<div class="col-12 text-center">
 		<img class="video" src="{{ url_for('videostream') }}">
 	</div>
-
-	<button id="listen" class="btn btn-success btn-lg"><i class="fas fa-volume-mute fa-fw"></i><span>Listen</span></button>
-
-	<!--<div class="row">
-		<audio controls autoplay>
-			<source src="{{ url_for('audiostream') }}" type="audio/x-wav;codec=pcm">
-			Your browser does not support the audio element.
-		</audio>
-	</div>-->
+	<div class="col-12 text-center">
+		<button id="listen" class="btn btn-success btn-lg"><i class="fas fa-volume-mute fa-fw"></i><span>Listen</span></button>
+	</div>
 </div>
 
-<script type="text/javascript">
-	let socket = io.connect(window.location.href.match(/(.*?)\:/)[1] + '://' + document.domain + ':' + location.port);
+<!-- Player -->
+<script type="text/javascript" src="{{ url_for('static', filename='js/player.js') }}"></script>
 
-	let config = {
-		bufferSize: 512
-	}
-	let player = new Player(config, socket);
-
-	$("#listen").on('click', function() {
-		console.log("click on listen");
-		if (player.isPlaying()) {
-			console.log("call stop");
-			player.stop();
-		}
-		else {
-			console.log("call play");
-			player.play();
-		}
-	});
-</script>
+<!-- Live -->
+<script type="text/javascript" src="{{ url_for('static', filename='js/live.js') }}"></script>
 {% endblock %}

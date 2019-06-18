@@ -35,9 +35,17 @@ class Player {
 
 		socket.on('sound', function(data) {
 			if (self.scriptNode) {
+				//console.log("received");
 				let array = new Float32Array(data.chunk);
 				console.log(array);
 				self.audioQueue.write(array);
+
+				/*console.log(data.chunk);
+				var testDataInt = new Uint8Array(data.chunk);
+				console.log(testDataInt);
+				let array = self.int16ToFloat32(testDataInt, 0, data.chunk.length);
+				console.log(array);
+				self.audioQueue.write(array);*/
 			}
 		});
 	}
@@ -66,5 +74,16 @@ class Player {
 
 	isPlaying() {
 		return !! this.scriptNode;
+	}
+
+	int16ToFloat32(inputArray, startIndex, length) {
+		var output = new Float32Array(inputArray.length-startIndex);
+		for (var i = startIndex; i < length; i++) {
+			var int = inputArray[i];
+			// If the high bit is on, then it is a negative number, and actually counts backwards.
+			var float = (int >= 0x8000) ? -(0x10000 - int) / 0x8000 : int / 0x7FFF;
+			output[i] = float;
+		}
+		return output;
 	}
 }

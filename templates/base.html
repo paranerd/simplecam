@@ -2,27 +2,29 @@
 <html>
 <head>
 	<title>SimpleCam</title>
+	<!-- jQuery -->
+	<script type="text/javascript" src="{{ url_for('static', filename='lib/jquery/jquery-3.4.1.min.js') }}"></script>
+
 	<!-- Bootstrap -->
 	<link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap/css/bootstrap.min.css') }}">
+
+	<!-- Bootstrap Popper -->
+	<script type="text/javascript" src="{{ url_for('static', filename='lib/bootstrap/js/popper.min.js') }}"></script>
+
+	<!-- Bootstrap JS -->
+	<script type="text/javascript" src="{{ url_for('static', filename='lib/bootstrap/js/bootstrap.min.js') }}"></script>
 
 	<!-- Font Awesome 5 -->
 	<link rel="stylesheet" href="{{ url_for('static', filename='lib/fontawesome/css/all.css') }}">
 
-	<!-- Custom styles -->
-	<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-
 	<!-- Socket.IO -->
 	<script type="text/javascript" src="{{ url_for('static', filename='lib/socket.io/socket.io.min.js') }}"></script>
 
-	<!-- jQuery -->
-	<script type="text/javascript" src="{{ url_for('static', filename='lib/jquery/jquery-3.4.1.min.js') }}"></script>
-
-	<!-- Player -->
-	<script type="text/javascript" src="{{ url_for('static', filename='js/player.js') }}"></script>
+	<!-- Custom styles -->
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 <body>
-	<div id="content">
-		{% block content %}
-		{% endblock %}
-	</div>
+	{% include 'header.html' %}
+	{% block content %}
+	{% endblock %}
 </body>
 </html>

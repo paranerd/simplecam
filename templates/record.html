@@ -3,14 +3,16 @@
 {% block content %}
 <div class="container">
 	<h2 class="text-center">{{ filename }}</h2>
-	{% if type == 'video' %}
-	<video class="video" width="640" height="480" controls>
-		<source src="/archive/play/{{ filename }}" type="video/mp4">
-	</video>
-	{% else %}
-	<audio controls>
-		<source src="/archive/play/{{ filename }}" type="audio/mpeg">
-	</audio>
-	{% endif %}
+	<div class="col-12 text-center">
+		{% if type == 'video' %}
+		<video class="video" width="640" height="480" controls>
+			<source src="/archive/play/{{ filename }}" type="video/mp4">
+		</video>
+		{% else %}
+		<audio controls>
+			<source src="/archive/play/{{ filename }}" type="audio/mpeg">
+		</audio>
+		{% endif %}
+	</div>
 </div>
 {% endblock %}
