@@ -5,8 +5,8 @@ from multiprocessing import Process
 from flask import Flask, render_template, Response, send_file, stream_with_context, redirect, url_for
 from flask_socketio import SocketIO, emit
 
-from motion_detector import MotionDetector
-from noise_detector import NoiseDetector
+from motion_detector import Motion_Detector
+from noise_detector import Noise_Detector
 
 import threading
 
@@ -18,10 +18,10 @@ socketio = SocketIO(app)
 archive_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'archive')
 
 # Setup detectors
-nd = NoiseDetector()
+nd = Noise_Detector()
 nd.start()
 
-md = MotionDetector(doDisplay=False)
+md = Motion_Detector(do_display=False)
 md.start()
 
 @app.route('/home')
@@ -112,4 +112,4 @@ def byte_to_mb(byte):
 app.jinja_env.globals.update(get_records=get_records)
 
 if __name__ == '__main__':
-	socketio.run(app, log_output=False, host='localhost', port=5000, use_reloader=False)
+	socketio.run(app, log_output=False, host='localhost', port=5000, debug=True, use_reloader=False)
