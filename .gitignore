@@ -1,3 +1,5 @@
 __pycache__/
 tmp.wav
-archive/
+archive/*
+!archive/.gitkeep
+locks/
