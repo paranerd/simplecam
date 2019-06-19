@@ -1,4 +1,6 @@
+# Threshold / Sliding window
 # https://raw.githubusercontent.com/jeysonmc/python-google-speech-scripts/master/stt_google.py
+
 # WebSocket streaming:
 # https://gist.github.com/fopina/3cefaed1b2d2d79984ad7894aef39a68
 
@@ -14,12 +16,11 @@ import threading
 import io
 import numpy as np
 from collections import deque
-from datetime import datetime
 
-from lock_manager import LockManager
+from lock_manager import Lock_Manager
 from util import Util
 
-class NoiseDetector(threading.Thread):
+class Noise_Detector(threading.Thread):
 	def __init__(self):
 		threading.Thread.__init__(self)
 
@@ -34,7 +35,7 @@ class NoiseDetector(threading.Thread):
 		self.OBSERVER_LENGTH    = 5	# Time in seconds to be observed for noise
 		self.NOTIFICATION_LIMIT = 1 # Seconds before a notification is sent
 
-		self.archive            = "/home/paranerd/Dokumente/simplecam/archive"
+		self.archive            = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'archive')
 		self.current_file       = None
 		self.chunk              = None
 		self.record             = [] # Stores audio chunks
@@ -43,14 +44,18 @@ class NoiseDetector(threading.Thread):
 		self.audio              = pyaudio.PyAudio()
 		self.stream             = self.get_stream()
 
-		self.threshold          = 1 #self.determine_threshold()
+		self.threshold          = self.determine_threshold()
 
-		self.lockManager        = LockManager("noise")
+		self.lock_manager       = Lock_Manager("noise")
 		self.detected_at        = None
 
 	def __del__(self):
+		# Stop recording
 		self.stream.close()
 		self.audio.terminate()
+
+		# Remove lock if exists
+		self.lock_manager.remove()
 
 	def get_stream(self):
 		"""
@@ -101,7 +106,7 @@ class NoiseDetector(threading.Thread):
 		"""
 		Setup the recorder
 		"""
-		self.current_file = self.archive + "/" + self.detected_at
+		self.current_file = self.archive + "/" + self.detected_at + ".wav"
 
 		Util.log(self.name, "Noise detected! Recording...")
 
@@ -179,11 +184,11 @@ class NoiseDetector(threading.Thread):
 		data = b''.join(data)
 
 		# Write converted data to file
-		with open(self.current_file + ".wav", "wb+") as file:
+		with open(self.current_file, "wb+") as file:
 			file.write(self.generate_wav(data))
 
 		# Convert
-		self.convert_to_mp3(self.current_file + ".wav")
+		self.convert_to_mp3(self.current_file)
 
 	def bytes_to_array(self, bytes, type):
 		"""
@@ -275,30 +280,21 @@ class NoiseDetector(threading.Thread):
 		except subprocess.CalledProcessError:
 			Util.log(self.name, "Error converting audio")
 
-	def detected(self, noise):
+	def detected(self, has_noise):
 		"""
 		Check if this or another detector detected something
 
-		@param boolean noise
+		@param boolean has_noise
 		@return boolean
 		"""
-		other_detected = self.lockManager.readOther()
-
-		# Set time of detection
-		if other_detected:
-			self.detected_at = other_detected
-		elif noise:
-			self.detected_at = datetime.now().strftime("%Y%m%d_%H%M%S")
+		if has_noise:
+			self.lock_manager.set()
 		else:
-			self.detected_at = None
+			self.lock_manager.remove()
 
-		# Manage noise-lock
-		if noise:
-			self.lockManager.set(self.detected_at)
-		else:
-			self.lockManager.remove()
+		self.detected_at = self.lock_manager.get_lock_time()
 
-		return other_detected or noise
+		return self.detected_at is not None
 
 	def recording(self):
 		"""
@@ -316,5 +312,5 @@ class NoiseDetector(threading.Thread):
 		self.notified = True
 
 if __name__ == "__main__":
-	nd = NoiseDetector()
+	nd = Noise_Detector()
 	nd.start()

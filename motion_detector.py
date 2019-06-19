@@ -8,41 +8,36 @@ import cv2
 import threading
 import subprocess
 from collections import deque
-from datetime import datetime
 
-from lock_manager import LockManager
+from lock_manager import Lock_Manager
 from util import Util
 
-class MotionDetector(threading.Thread):
-	def __init__(self, source=None, doRecord=True, doDisplay=True, doAddContours=True, doAddTarget=False):
+class Motion_Detector(threading.Thread):
+	def __init__(self, source=None, do_record=True, do_display=True, do_add_contours=True, do_add_target=False):
 		threading.Thread.__init__(self)
 
 		self.name = self.__class__.__name__
-		self.archive = "archive"
+		self.archive = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'archive')
 
 		self.writer = None
-		self.master = None
-		self.currentFrame = None
+		self.current_frame = None
 
 		self.codec = cv2.VideoWriter_fourcc('M','J', 'P', 'G')
-		#self.codec = 0x7634706d #cv2.VideoWriter_fourcc('M','P', '4', 'V')
-		#self.codec = cv2.VideoWriter_fourcc('X','2', '6', '4')
-		#self.codec = 0x31637661
 		self.OBSERVER_LENGTH = 5 # Time in seconds to be observed for motion
 		self.threshold = 15
 
-		self.doDisplay = doDisplay
-		self.doRecord = doRecord
-		self.doAddContours = doAddContours
-		self.doAddTarget = doAddTarget
-		self.currentFile = None
+		self.do_display = do_display
+		self.do_record = do_record
+		self.do_add_contours = do_add_contours
+		self.do_add_target = do_add_target
+		self.current_file = None
 
 		self.source = cv2.VideoCapture(source) if source is not None else self.init_camera()
 
-		self.fps = 22 #self.find_fps(self.source)
-		self.height, self.width = self.set_dimensions(self.source)
+		self.fps = self.find_fps(self.source)
+		self.height, self.width = self.get_dimensions(self.source)
 
-		self.lockManager = LockManager("motion")
+		self.lock_manager = Lock_Manager("motion")
 
 	def __del__(self):
 		# Release camera
@@ -52,21 +47,46 @@ class MotionDetector(threading.Thread):
 		cv2.destroyAllWindows()
 
 		# Remove lock if exists
-		self.lockManager.remove()
+		self.lock_manager.remove()
 
 	def get_frame(self):
-		if self.currentFrame is not None:
-			ret, jpeg = cv2.imencode('.jpg', self.currentFrame)
-			return jpeg.tobytes()
+		"""
+		Return the current frame
 
-		return None
+		@return bytes
+		"""
+		return self.frame_to_jpg(self.current_frame) if self.current_frame is not None else None
 
-	def set_dimensions(self, source):
+	def frame_to_jpg(self, frame):
+		"""
+		Convert video frame to jpg
+
+		@param array frame
+		@return bytes
+		"""
+		ret, jpeg = cv2.imencode('.jpg', self.current_frame)
+		return jpeg.tobytes()
+
+	def get_dimensions(self, source):
+		"""
+		Determine height and width of the video source
+
+		@return tuple(int, int)
+		"""
 		frame = cv2.cvtColor(source.read()[1],cv2.COLOR_RGB2GRAY)
 		return frame.shape[0: 2]
 
-	def find_fps(self, source, num_frames=120):
+	def find_fps(self, source):
+		"""
+		Determine frames per second of the video source
+
+		@param video source
+		@return int
+		"""
 		Util.log(self.name, "Determining FPS...")
+
+		# How many frames to capture
+		num_frames = 120
 
 		# Start time
 		start = time.time()
@@ -78,44 +98,59 @@ class MotionDetector(threading.Thread):
 		# End time
 		end = time.time()
 
-		# Time elapsed
-		seconds = end - start
-
 		# Calculate frames per second
-		fps = int(math.floor(num_frames / seconds))
+		fps = int(math.floor(num_frames / (end - start)))
 		Util.log(self.name, "Setting FPS to " + str(fps))
+
 		return fps
 
 	def init_camera(self):
-		# init camera
+		"""
+		Start the camera
+
+		@return cv2.VideoCapture
+		"""
+		# Init camera
 		camera = cv2.VideoCapture(0)
-		camera.set(3,320)
-		camera.set(4,240)
+		camera.set(3, 320)
+		camera.set(4, 240)
+
+		# Wait half a second for light adjustment
 		time.sleep(0.5)
 
 		return camera
 
 	def start_recording(self):
-		'''
+		"""
 		Setup the recorder
-		'''
+		"""
 
-		self.currentFile = self.archive + "/" + self.detectedAt
+		self.current_file = self.archive + "/" + self.detected_at + ".avi"
 
 		Util.log(self.name, "Motion detected! Recording...")
 
 		# Set path and FPS
-		self.writer = cv2.VideoWriter(self.currentFile + ".avi", self.codec, self.fps, (self.width, self.height))
+		self.writer = cv2.VideoWriter(self.current_file, self.codec, self.fps, (self.width, self.height))
 
 	def stop_recording(self):
+		"""
+		Reset values to default
+		"""
 		self.writer = None
-		self.currentFile = None
-		#self.lockManager.remove()
+		self.current_file = None
+		self.detected_at = None
 
-	def convert_to_mp4(self):
+	def convert_to_mp4(self, path):
+		"""
+		Convert video file to mp4 using ffmpeg
+
+		@param string path
+		"""
 		try:
 			Util.log(self.name, "Converting video...")
-			cmd = 'for i in ' + self.archive + '/*.avi; do ffmpeg -i "$i" "${i%.*}.mp4" 2> /dev/null && rm "$i"; done'
+			destination = os.path.splitext(path)[0] + '.mp4'
+			cmd = 'ffmpeg -i "{}" "{}" 2> /dev/null && rm "{}"'.format(path, destination, path)
+			#cmd = 'for i in ' + self.archive + '/*.avi; do ffmpeg -i "$i" "${i%.*}.mp4" 2> /dev/null && rm "$i"; done'
 			p = subprocess.Popen(cmd, shell=True)
 			(output, err) = p.communicate()
 
@@ -123,72 +158,74 @@ class MotionDetector(threading.Thread):
 			Util.log(self.name, "Error converting video")
 
 	def run(self):
+		"""
+		Main worker
+		"""
 		observer = deque(maxlen=self.fps * self.OBSERVER_LENGTH)
+		previous_frame = None
 
 		while True:
 			# Grab a frame
-			(grabbed, self.currentFrame) = self.source.read()
+			(grabbed, self.current_frame) = self.source.read()
 
 			# End of feed
 			if not grabbed:
 				break
 
-			frameToSave = self.currentFrame
-
 			# Gray frame
-			frame1 = cv2.cvtColor(self.currentFrame, cv2.COLOR_BGR2GRAY)
+			frame_gray = cv2.cvtColor(self.current_frame, cv2.COLOR_BGR2GRAY)
 
 			# Blur frame
-			frame2 = cv2.GaussianBlur(frame1,(21,21),0)
+			frame_blur = cv2.GaussianBlur(frame_gray, (21, 21), 0)
 
-			# Initialize master
-			if self.master is None:
-				self.master = frame2
+			# If there's no previous frame, us the current one
+			if previous_frame is None:
+				previous_frame = frame_blur
 				continue
 
 			# Delta frame
-			frame3 = cv2.absdiff(self.master, frame2)
+			delta_frame = cv2.absdiff(previous_frame, frame_blur)
 
 			# Threshold frame
-			frame4 = cv2.threshold(frame3,15,255,cv2.THRESH_BINARY)[1]
+			threshold_frame = cv2.threshold(delta_frame, 15, 255, cv2.THRESH_BINARY)[1]
 
 			# Dilate the thresholded image to fill in holes
-			kernel = np.ones((5,5),np.uint8)
-			frameDilated = cv2.dilate(frame4,kernel,iterations=4)
+			kernel = np.ones((5, 5), np.uint8)
+			dilated_frame = cv2.dilate(threshold_frame, kernel, iterations=4)
 
 			# Find difference in percent
-			res = frameDilated.astype(np.uint8)
+			res = dilated_frame.astype(np.uint8)
 			movement = (np.count_nonzero(res) * 100) / res.size
 
 			# Add movement percentage to observer
 			observer.append(movement)
 
-			if self.doAddContours or self.doAddTarget:
-				frameToSave, targets = self.add_contours(self.currentFrame, frameDilated)
+			if self.do_add_contours or self.do_add_target:
+				self.current_frame, targets = self.add_contours(self.current_frame, dilated_frame)
 
-				if self.doAddTarget:
-					frameToSave = self.add_target(self.currentFrame, targets)
+				if self.do_add_target:
+					self.current_frame = self.add_target(self.current_frame, targets)
 
-			if self.detected(sum([x > self.threshold for x in observer]) > 0):
+			if self.do_record and self.detected(sum([x > self.threshold for x in observer]) > 0):
 				if not self.recording():
 					self.start_recording()
 
-				self.writer.write(frameToSave)
+				self.writer.write(self.current_frame)
 			elif self.recording():
 				# Convert
-				self.convert_to_mp4()
+				self.convert_to_mp4(self.current_file)
 
 				# Reset all
 				self.stop_recording()
 
 				Util.log(self.name, "Observing...")
 
-			# Update master frame
-			self.master = frame2
+			# Set blurred frame as new previous frame
+			previous_frame = frame_blur
 
 			# Display
-			if self.doDisplay:
-				cv2.imshow("Current frame:", self.currentFrame)
+			if self.do_display:
+				cv2.imshow("Current frame:", self.current_frame)
 
 			# Exit on 'q'
 			key = cv2.waitKey(1) & 0xFF
@@ -196,12 +233,19 @@ class MotionDetector(threading.Thread):
 			if key == ord('q'):
 				break
 
-	def add_contours(self, frameRaw, frameDilated):
+	def add_contours(self, raw_frame, dilated_frame):
+		"""
+		Add contours to frame
+
+		@param array raw_frame
+		@param array dilated_frame
+		@return tuple(array, list)
+		"""
 		# Find contours on thresholded image
-		contours, nada = cv2.findContours(frameDilated.copy(),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+		contours, nada = cv2.findContours(dilated_frame.copy(),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 
 		# Make coutour frame
-		frameContour = frameRaw.copy()
+		contour_frame = raw_frame.copy()
 
 		# Target contours
 		targets = []
@@ -223,17 +267,24 @@ class MotionDetector(threading.Thread):
 			ca = cv2.contourArea(c)
 
 			# plot contours
-			cv2.drawContours(frameContour,[c],0,(0,0,255),2)
-			cv2.rectangle(frameContour,(x,y),(x+w,y+h),(0,255,0),2)
-			cv2.circle(frameContour,(cx,cy),2,(0,0,255),2)
-			cv2.circle(frameContour,(rx,ry),2,(0,255,0),2)
+			cv2.drawContours(contour_frame,[c],0,(0,0,255),2)
+			cv2.rectangle(contour_frame,(x,y),(x+w,y+h),(0,255,0),2)
+			cv2.circle(contour_frame,(cx,cy),2,(0,0,255),2)
+			cv2.circle(contour_frame,(rx,ry),2,(0,255,0),2)
 
 			# save target contours
 			targets.append((rx,ry,ca))
 
-		return frameContour, targets
+		return contour_frame, targets
 
-	def addTarget(self, frameRaw, targets):
+	def add_target(self, raw_frame, targets):
+		"""
+		Add crosshairs to frame
+
+		@param array raw_frame
+		@param list targets
+		@return array
+		"""
 		# Make target
 		area = sum([x[2] for x in targets])
 		mx = 0
@@ -248,41 +299,43 @@ class MotionDetector(threading.Thread):
 
 		# Plot target
 		tr = 50
-		frameTarget = frameRaw.copy()
+		target_frame = raw_frame.copy()
 
 		if targets:
-			cv2.circle(frameTarget, (mx, my), tr, (0, 0, 255, 0), 2)
-			cv2.line(frameTarget, (mx - tr, my), (mx + tr, my), (0, 0, 255, 0), 2)
-			cv2.line(frameTarget, (mx, my - tr), (mx, my + tr), (0, 0, 255, 0), 2)
+			cv2.circle(target_frame, (mx, my), tr, (0, 0, 255, 0), 2)
+			cv2.line(target_frame, (mx - tr, my), (mx + tr, my), (0, 0, 255, 0), 2)
+			cv2.line(target_frame, (mx, my - tr), (mx, my + tr), (0, 0, 255, 0), 2)
 
-		return frameTarget
+		return target_frame
 
-	def detected(self, motion):
-		otherDetected = self.lockManager.readOther()
+	def detected(self, has_motion):
+		"""
+		Check if this or another detector detected something
 
-		# Set time of detection
-		if otherDetected:
-			self.detectedAt = otherDetected
-		elif motion:
-			self.detectedAt = datetime.now().strftime("%Y%m%d_%H%M%S")
+		@param boolean has_motion
+		@return boolean
+		"""
+		if has_motion:
+			self.lock_manager.set()
 		else:
-			self.detectedAt = None
+			self.lock_manager.remove()
 
-		# Manage motion-lock
-		if motion:
-			self.lockManager.set(self.detectedAt)
-		else:
-			self.lockManager.remove()
+		self.detected_at = self.lock_manager.get_lock_time()
 
-		return otherDetected or motion
+		return self.detected_at is not None
 
 	def recording(self):
+		"""
+		Check if currently recording
+
+		@return boolean
+		"""
 		return self.writer is not None
 
 if __name__ == "__main__":
 	args = sys.argv[1:]
 	source = None
-	doDisplay = False
+	do_display = False
 
 	try:
 		opts, args = getopt.getopt(args, "hs:d",["source=", "display"])
@@ -297,7 +350,7 @@ if __name__ == "__main__":
 		elif opt in ("-s", "--source"):
 			source = arg.strip()
 		elif opt in ("-d", "--display"):
-			doDisplay = True
+			do_display = True
 
 	if source is not None:
 		print('Input: ', source)
@@ -307,5 +360,5 @@ if __name__ == "__main__":
 	if source is not None and not os.path.isfile(source):
 		print(str(source) + " does not exist")
 	else:
-		md = MotionDetector(source=source, doDisplay=doDisplay)
+		md = Motion_Detector(source=source, do_display=do_display, do_add_contours=True)
 		md.start()
