@@ -13,6 +13,7 @@ pip3 install flask pyaudio opencv-python
 
 ## To-Do
 - Merging video and audio
+- Maybe add eventlet (pip install eventlet; gunicorn --worker-class eventlet -w 1 server:app)
 
 ## Sources
 https://github.com/log0/video_streaming_with_flask_example
