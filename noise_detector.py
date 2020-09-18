@@ -51,8 +51,11 @@ class Noise_Detector(threading.Thread):
 
 	def __del__(self):
 		# Stop recording
-		self.stream.close()
-		self.audio.terminate()
+		if self.stream:
+			self.stream.close()
+
+		if self.audio:
+			self.audio.terminate()
 
 		# Remove lock if exists
 		self.lock_manager.remove()
