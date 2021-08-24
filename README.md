@@ -8,7 +8,7 @@ sudo apt install python3 python3-pip lame ffmpeg libasound-dev portaudio19-dev l
 ```
 
 ```
-pip3 install flask pyaudio opencv-python
+pip3 install -r requirements.txt
 ```
 
 ## To-Do
