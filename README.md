@@ -8,6 +8,10 @@ sudo apt install python3 python3-pip python3-pyaudio lame ffmpeg libasound-dev p
 ```
 
 ```
+sudo apt-get install libcblas-dev libhdf5-dev libhdf5-serial-dev libatlas-base-dev libjasper-dev libqtgui4 libqt4-test
+```
+
+```
 pip3 install -r requirements.txt
 ```
 
