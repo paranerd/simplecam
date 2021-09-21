@@ -81,7 +81,7 @@ def watch():
         while True:
             # Check for detections
             for t in threads:
-                if isinstance(t, Detector) and t.detected:
+                if isinstance(t, Detector) and t.detected():
                     detected = True
                     detected_by = t.name
                     break
