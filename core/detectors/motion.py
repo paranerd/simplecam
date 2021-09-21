@@ -11,8 +11,9 @@ import subprocess
 from collections import deque
 from pathlib import Path
 from dotenv import load_dotenv
-
 import logging
+from util.recorder import Recorder
+from util.detector import Detector
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = os.path.join(PROJECT_ROOT, 'config')
@@ -21,8 +22,7 @@ CONFIG_PATH = os.path.join(PROJECT_ROOT, 'config')
 DOTENV_PATH = os.path.join(PROJECT_ROOT, '.env')
 load_dotenv(DOTENV_PATH)
 
-
-class MotionDetector(threading.Thread):
+class MotionDetector(threading.Thread, Recorder, Detector):
     def __init__(self):
         threading.Thread.__init__(self)
 

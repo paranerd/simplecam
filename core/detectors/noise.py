@@ -15,6 +15,8 @@ from pathlib import Path
 import logging
 import wave
 from dotenv import load_dotenv
+from util.recorder import Recorder
+from util.detector import Detector
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -22,8 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DOTENV_PATH = os.path.join(PROJECT_ROOT, '.env')
 load_dotenv(DOTENV_PATH)
 
-
-class NoiseDetector(threading.Thread):
+class NoiseDetector(threading.Thread, Recorder, Detector):
     def __init__(self):
         threading.Thread.__init__(self)
 
@@ -175,7 +176,6 @@ class NoiseDetector(threading.Thread):
                 self.detected = sum([x > self.threshold for x in observer]) > 0
         except KeyboardInterrupt:
             self.logger.info("Interrupted.")
-
 
 if __name__ == "__main__":
     nd = NoiseDetector()

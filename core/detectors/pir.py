@@ -4,6 +4,7 @@ import time
 import threading
 from pathlib import Path
 from dotenv import load_dotenv
+from util.detector import Detector
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -16,8 +17,7 @@ SENSOR_PIN = int(os.getenv('PIR_SENSOR_PIN'))
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(SENSOR_PIN, GPIO.IN)
 
-
-class PIRDetector(threading.Thread):
+class PIRDetector(threading.Thread, Detector):
     def __init__(self):
         threading.Thread.__init__(self)
 
