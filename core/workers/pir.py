@@ -21,8 +21,17 @@ class PIRDetector(threading.Thread, Detector):
     def __init__(self):
         threading.Thread.__init__(self)
 
-        self.is_detector = True
-        self.detected = False
+        self.name = self.__class__.__name__
+
+        self._detected = False
+
+    def detected(self):
+        """
+        Returns whether movement was detected.
+
+        @return bool
+        """
+        return self._detected
 
     def callback(self, channel):
         """
@@ -31,10 +40,10 @@ class PIRDetector(threading.Thread, Detector):
         @param int channel
         """
         if GPIO.input(SENSOR_PIN):
-            self.detected = True
+            self._detected = True
         else:
             time.sleep(3)  # You might also do this on the sensor directly
-            self.detected = False
+            self._detected = False
 
     def run(self):
         """Main entry point."""

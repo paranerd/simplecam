@@ -26,13 +26,8 @@ class MotionDetector(threading.Thread, Recorder, Detector):
     def __init__(self):
         threading.Thread.__init__(self)
 
-        name = self.__class__.__name__
-        self.logger = logging.getLogger(name)
-
-        self.is_detector = True
-        self.is_recorder = True
-
-        self.writer = None
+        self.name = self.__class__.__name__
+        self.logger = logging.getLogger(self.name)
 
         # Time in seconds to be observed for motion
         self.OBSERVER_LENGTH = int(os.getenv('OBSERVER_LENGTH'))
@@ -53,14 +48,15 @@ class MotionDetector(threading.Thread, Recorder, Detector):
 
         self.fps = self.find_fps(self.source)
 
-        self.detected = False
+        self._detected = False
 
         self.recording_start = None
         self.recording = []
 
     def __del__(self):
         # Release camera
-        self.source.release()
+        if self.source:
+            self.source.release()
 
         # Close all windows
         cv2.destroyAllWindows()
@@ -134,10 +130,10 @@ class MotionDetector(threading.Thread, Recorder, Detector):
         fps = math.floor(len(self.recording) / duration)
         self.logger.info('Actual FPS: {}'.format(fps))
 
-        self.writer = None
         self.recording_start = None
 
         self.save(fps)
+        self.recording = []
 
     def save(self, fps):
         """
@@ -145,13 +141,11 @@ class MotionDetector(threading.Thread, Recorder, Detector):
 
         @param int fps
         """
-        self.writer = cv2.VideoWriter('{}.avi'.format(
+        writer = cv2.VideoWriter('{}.avi'.format(
             self.path), self.codec, fps, (self.width, self.height))
 
         for frame in self.recording:
-            self.writer.write(frame)
-
-        self.writer = None
+            writer.write(frame)
 
     def run(self):
         """
@@ -214,7 +208,7 @@ class MotionDetector(threading.Thread, Recorder, Detector):
             if self.detect_faces:
                 _, current_frame = self.find_face(current_frame)
 
-            self.detected = sum([x > self.threshold for x in observer]) > 0
+            self._detected = sum([x > self.threshold for x in observer]) > 0
 
             # Exit on 'q'
             key = cv2.waitKey(1) & 0xFF
@@ -229,6 +223,14 @@ class MotionDetector(threading.Thread, Recorder, Detector):
             # Display
             if self.show_image:
                 cv2.imshow("Current frame:", current_frame)
+
+    def detected(self):
+        """
+        Returns whether movement was detected.
+
+        @return bool
+        """
+        return self._detected
 
     def find_face(self, frame):
         """
@@ -300,7 +302,7 @@ class MotionDetector(threading.Thread, Recorder, Detector):
 
 
 if __name__ == "__main__":
-    filename = datetime.datetime.now().strftime("%Y%m%d_%H%M%S-md")
+    path = datetime.datetime.now().strftime("%Y%m%d_%H%M%S-md")
     md = MotionDetector()
     md.start()
 
@@ -308,7 +310,7 @@ if __name__ == "__main__":
 
     print('Starting...')
 
-    md.start_recording(filename)
+    md.start_recording(path)
     time.sleep(10)
     md.stop_recording()
 

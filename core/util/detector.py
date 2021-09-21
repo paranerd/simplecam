@@ -5,3 +5,4 @@ class Detector:
 
     @return bool
     """
+    raise NotImplementedError("detected() is not implemented")

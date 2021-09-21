@@ -28,10 +28,8 @@ class NoiseDetector(threading.Thread, Recorder, Detector):
     def __init__(self):
         threading.Thread.__init__(self)
 
-        name = self.__class__.__name__
-        self.logger = logging.getLogger(name)
-        self.is_detector = True
-        self.is_recorder = True
+        self.name = self.__class__.__name__
+        self.logger = logging.getLogger(self.name)
 
         self.FORMAT = pyaudio.paInt16
         # Hz, so samples (bytes) per second, e.g. 44100 or 48000
@@ -56,7 +54,7 @@ class NoiseDetector(threading.Thread, Recorder, Detector):
         # Prepend audio from before noise was detected
         # Keep the last {HISTORY_LENGTH} seconds in history
         self.history = deque(maxlen=self.HISTORY_LENGTH * self.CHUNKS_PER_SEC)
-        self.detected = False
+        self._detected = False
         self.record = []
         self.recording = False
 
@@ -120,7 +118,7 @@ class NoiseDetector(threading.Thread, Recorder, Detector):
         """
         Setup the recorder.
 
-        @param string filename
+        @param string path
         """
         self.save_path = '{}.wav'.format(path)
         self.recording = True
@@ -132,8 +130,6 @@ class NoiseDetector(threading.Thread, Recorder, Detector):
         self.save()
 
         self.save_path = None
-        self.detected_at = None
-        self.notified = False
         self.recording = False
         self.record = []
 
@@ -173,17 +169,25 @@ class NoiseDetector(threading.Thread, Recorder, Detector):
                 if self.recording:
                     self.record.append(self.chunk)
 
-                self.detected = sum([x > self.threshold for x in observer]) > 0
+                self._detected = sum([x > self.threshold for x in observer]) > 0
         except KeyboardInterrupt:
             self.logger.info("Interrupted.")
+
+    def detected(self):
+        """
+        Returns whether noise was detected.
+
+        @return bool
+        """
+        return self._detected
 
 if __name__ == "__main__":
     nd = NoiseDetector()
     nd.start()
     time.sleep(2)
 
-    filename = datetime.datetime.now().strftime("%Y%m%d_%H%M%S-nd")
-    nd.start_recording(filename)
+    path = datetime.datetime.now().strftime("%Y%m%d_%H%M%S-nd")
+    nd.start_recording(path)
     print('started nd')
     time.sleep(10)
     nd.stop_recording()

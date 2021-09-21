@@ -7,9 +7,11 @@ from dotenv import load_dotenv
 from pathlib import Path
 import time
 import datetime
-from detectors.noise import NoiseDetector
-from detectors.motion import MotionDetector
-from detectors.pir import PIRDetector
+from workers.noise import NoiseDetector
+from workers.motion import MotionDetector
+from workers.pir import PIRDetector
+from util.detector import Detector
+from util.recorder import Recorder
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DOTENV_PATH = os.path.join(PROJECT_ROOT, '.env')
@@ -43,6 +45,7 @@ def init_environment():
 def merge(filename, source, destination):
     """
     Merge .wav and .avi using ffmpeg.
+    For some reason we need to first convert AVI to MP4 and then merge that MP4 with the WAV to be able to play in the browser.
 
     @param string filename
     @param string source
@@ -50,7 +53,12 @@ def merge(filename, source, destination):
     """
     logger.info('Merging...')
 
-    cmd = "ffmpeg -hide_banner -loglevel error -i {1}/{0}.wav -i {1}/{0}.avi -c:v copy -c:a aac -strict experimental {2}/{0}.mp4 && rm {1}/{0}.*".format(
+    # Convert AVI -> MP4
+    cmd = 'ffmpeg -i {1}/{0}.avi {1}/{0}.mp4 2> /dev/null'.format(filename, source)
+    subprocess.call(cmd, shell=True)
+
+    # Merge MP4 + WAV -> MP4
+    cmd = "ffmpeg -hide_banner -loglevel error -i {1}/{0}.wav -i {1}/{0}.mp4 -c:v copy -c:a aac -strict experimental {2}/{0}.mp4 && rm {1}/{0}.*".format(
         filename, source, destination)
     subprocess.call(cmd, shell=True)
 
@@ -63,6 +71,7 @@ def watch():
     """
     detected = False
     notified = False
+    detected_by = ""
     recording_started = None
     max_recording_length = int(os.getenv('MAX_RECORDING_LENGTH'))
 
@@ -72,8 +81,9 @@ def watch():
         while True:
             # Check for detections
             for t in threads:
-                if hasattr(t, 'is_detector') and t.detected:
+                if isinstance(t, Detector) and t.detected:
                     detected = True
+                    detected_by = t.name
                     break
 
             if detected and not (recording_started and time.time() - recording_started > max_recording_length):
@@ -85,9 +95,10 @@ def watch():
                     path = os.path.join(TMP_PATH, str(filename))
 
                     for t in threads:
-                        if hasattr(t, 'is_recorder'):
+                        if isinstance(t, Recorder):
                             t.start_recording(path)
 
+                    logger.info('Detection by {}'.format(detected_by))
                     logger.info('Recording started...')
 
                     notified = True
@@ -96,7 +107,7 @@ def watch():
                     logger.info('Recording stopped.')
 
                     for t in threads:
-                        if hasattr(t, 'is_recorder'):
+                        if isinstance(t, Recorder):
                             t.stop_recording()
 
                     # Merge audio/video
