@@ -1,0 +1,27 @@
+{
+  "name": "simplecam",
+  "version": "0.0.1",
+  "description": "Surveillance camera with Motion- and Noise-Detector",
+  "main": "index.js",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^10.0.0",
+    "express": "^4.17.1",
+    "hls.js": "^1.0.10",
+    "vue": "^3.2.11"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paranerd/simplecam.git"
+  },
+  "author": "paranerd",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/paranerd/simplecam/issues"
+  },
+  "homepage": "https://github.com/paranerd/simplecam#readme"
+}
