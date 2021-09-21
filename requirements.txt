@@ -1,4 +1,0 @@
-flask
-flask_socketio
-pyaudio
-opencv-python
