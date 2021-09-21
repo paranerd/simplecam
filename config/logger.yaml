@@ -1,0 +1,26 @@
+version: 1
+formatters:
+  simple:
+    format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: simple
+    stream: ext://sys.stdout
+  file:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: INFO
+    formatter: simple
+    filename: /home/pi/Development/simplecam/log/info.log
+    encoding: utf8
+    when: midnight
+    backupCount: 7
+loggers:
+  my_logger:
+    level: ERROR
+    handlers: [console]
+    propagate: no
+root:
+  level: INFO
+  handlers: [console, file]
